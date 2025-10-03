@@ -1,0 +1,40 @@
+{
+  "name": "@opusdns/api-spec-ts-generator",
+  "version": "0.9.0",
+  "description": "Generator for TypeScript types from OpenAPI specification.",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "typeid-js": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.0.14",
+    "js-yaml": "^4.1.0",
+    "openapi-typescript": "^7.8.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpusDNS/api-spec-ts-generator.git"
+  },
+  "author": "",
+  "license": "LGPL 3.0",
+  "bugs": {
+    "url": "https://github.com/OpusDNS/api-spec-ts-generator/issues"
+  },
+  "homepage": "https://github.com/OpusDNS/api-spec-ts-generator#readme",
+  "files": [
+    "package.json",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}
