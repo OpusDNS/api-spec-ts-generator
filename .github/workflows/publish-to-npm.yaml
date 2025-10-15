@@ -23,6 +23,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
           scope: '@opusdns'
 
+      - name: Configure npm auth
+        run: |
+          npm config set @opusdns:registry https://registry.npmjs.org/
+          npm config set //registry.npmjs.org/:_authToken "${{ secrets.GITHUB_TOKEN }}"
+
       - name: Check npm config (debugging)
         run: npm config list
 
