@@ -1,6 +1,6 @@
 {
   "name": "@opusdns/api-spec-ts-generator",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Generator for TypeScript types from OpenAPI specification.",
   "main": "./src/index.ts",
   "module": "./src/index.ts",
