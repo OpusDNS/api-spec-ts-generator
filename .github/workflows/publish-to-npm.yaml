@@ -23,6 +23,9 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
           scope: '@opusdns'
 
+      - name: Check npm config (debugging)
+        run: npm config list
+
       - name: Install Dependencies
         run: npm install
 
