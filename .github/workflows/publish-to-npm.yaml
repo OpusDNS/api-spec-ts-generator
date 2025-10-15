@@ -26,8 +26,6 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git status
-          git diff --stat
           npm version minor
           git push
           npm publish --access public
