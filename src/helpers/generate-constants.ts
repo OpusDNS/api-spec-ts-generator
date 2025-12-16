@@ -22,6 +22,16 @@ function convertToUpperCase(name: string): string {
     .replace(/_+$/, '');
 }
 
+function generateSafePropertyKey(key: string) {
+  const firstChar = key[0];
+  const startsWithDigit = firstChar >= '0' && firstChar <= '9';
+  if (startsWithDigit) {
+    return `"${key}"`;
+  }
+
+  return key;
+}
+
 function extractEnumsFromOpenAPI(schemaPath: PathOrFileDescriptor): EnumInfo[] {
   const content = fs.readFileSync(schemaPath, 'utf8');
   const schema = yaml.load(content) as any;
@@ -98,10 +108,7 @@ import { ${enums.map(e => e.originalName).join(', ')} } from './schemas';
 
   enums.forEach(enumInfo => {
     const typeName = enumInfo.originalName;
-    const valueCount = Object.keys(enumInfo.values).length;
-    const enumType = enumInfo.type === 'integer' ? 'integer' : 'string';
 
-    // Generate comprehensive TSDoc comment
     content += `/**
  * ${enumInfo.description || `${typeName} enum constants`}
  *
@@ -141,7 +148,7 @@ import { ${enums.map(e => e.originalName).join(', ')} } from './schemas';
       content += `export const ${enumInfo.name} = {\n`;
       Object.entries(enumInfo.values).forEach(([key, value]) => {
         const valueStr = typeof value === 'string' ? `"${value}"` : value;
-        content += `  ${key}: ${valueStr},\n`;
+        content += `  ${generateSafePropertyKey(key)}: ${valueStr},\n`;
       });
       content += `} as const satisfies Record<string, ${typeName}>;\n\n`;
 
