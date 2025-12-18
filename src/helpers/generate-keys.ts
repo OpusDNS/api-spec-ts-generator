@@ -205,7 +205,7 @@ function generateKeysFile(
  * @see {@link ${type.name}} - The TypeScript type definition
  * @see {@link KEYS_${typeNameUpper}} - Array of all keys for this type
  */
-export const KEY_${typeNameUpper}_${keyName}: keyof ${type.name} = '${prop}';`);
+export const KEY_${typeNameUpper}_${keyName} = '${prop}' satisfies keyof ${type.name};`);
     });
 
     // Generate keys array
