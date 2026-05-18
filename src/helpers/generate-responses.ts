@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { OpenAPISpec, generatePathName } from './utils';
+import { OpenAPISpec, generatePathName, buildSchemasImport } from './utils';
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -89,7 +89,7 @@ function buildContent(entries: ResponseEntry[], schemaAliasMap: Record<string, s
   }
 
   const importLine = usedAliases.size > 0
-    ? `import type { ${[...usedAliases].sort().join(', ')} } from './schemas';\n\n`
+    ? buildSchemasImport([...usedAliases].sort()) + '\n\n'
     : '';
 
   return importLine + lines.join('\n');

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { OpenAPISpec, OpenAPISchema, toUpperSnakeCase } from './utils';
+import { OpenAPISpec, OpenAPISchema, toUpperSnakeCase, buildSchemasImport } from './utils';
 
 function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>): string {
   const schemas = spec.components?.schemas ?? {};
@@ -40,7 +40,7 @@ function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
   }
 
   const importLine = importedTypes.length > 0
-    ? `import type { ${importedTypes.join(', ')} } from './schemas';\n\n`
+    ? buildSchemasImport(importedTypes) + '\n\n'
     : '';
 
   return importLine + body.join('\n');

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { OpenAPISpec, toUpperSnakeCase } from './utils';
+import { OpenAPISpec, toUpperSnakeCase, buildSchemasImport } from './utils';
 
 interface EnumInfo {
   constName: string;
@@ -45,7 +45,7 @@ function buildContent(enums: EnumInfo[]): string {
   const importedTypes = enums.map(e => e.tsTypeName);
   const lines: string[] = [];
   if (importedTypes.length > 0) {
-    lines.push(`import type { ${importedTypes.join(', ')} } from './schemas';`);
+    lines.push(buildSchemasImport(importedTypes));
     lines.push('');
   }
 
