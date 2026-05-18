@@ -100,3 +100,8 @@ export function toTypeName(schemaName: string): string {
 
   return name;
 }
+
+export function buildSchemasImport(types: string[]): string {
+  if (types.length === 0) return '';
+  return `import type {\n  ${types.join(',\n  ')},\n} from './schemas';`;
+}
