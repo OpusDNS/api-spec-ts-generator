@@ -1,20 +1,21 @@
-#!/usr/bin/env tsx
-
-import fs, { PathOrFileDescriptor } from 'fs';
-import yaml from 'js-yaml';
+import fs from 'fs';
 import path from 'path';
+import { OpenAPISpec, toUpperSnakeCase } from './utils';
 
 interface EnumInfo {
-  name: string;
-  originalName: string; // Original schema name
-  values: Record<string, string | number>;
-  description?: string;
+  constName: string;
+  tsTypeName: string;
+  values: (string | number)[];
   type: 'string' | 'integer';
-  valueDescriptions?: string[];
 }
 
-function convertToUpperCase(name: string): string {
-  return name
+function generateSafeKey(key: string): string {
+  return /^\d/.test(key) ? `"${key}"` : key;
+}
+
+function toEnumKey(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9]/g, '_')
     .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     .toUpperCase()
@@ -22,191 +23,67 @@ function convertToUpperCase(name: string): string {
     .replace(/_+$/, '');
 }
 
-function generateSafePropertyKey(key: string) {
-  const firstChar = key[0];
-  const startsWithDigit = firstChar >= '0' && firstChar <= '9';
-  if (startsWithDigit) {
-    return `"${key}"`;
-  }
-
-  return key;
-}
-
-function extractEnumsFromOpenAPI(schemaPath: PathOrFileDescriptor): EnumInfo[] {
-  const content = fs.readFileSync(schemaPath, 'utf8');
-  const schema = yaml.load(content) as any;
-
+function collectEnums(spec: OpenAPISpec, schemaAliasMap: Record<string, string>): EnumInfo[] {
   const enums: EnumInfo[] = [];
 
-  if (!schema.components?.schemas) {
-    return enums;
-  }
+  for (const [schemaName, schema] of Object.entries(spec.components?.schemas ?? {})) {
+    if (!schema.enum || !Array.isArray(schema.enum)) continue;
 
-  for (const [name, schemaDef] of Object.entries(schema.components.schemas)) {
-    const def = schemaDef as any;
-    // Check if it's an enum
-    if (def.enum && Array.isArray(def.enum)) {
-      const values: Record<string, string | number> = {};
-      const enumType = def.type || 'string';
-
-      // Populate the values object
-      def.enum.forEach((value: string | number, index: number) => {
-        // Convert value to a valid enum key
-        const key = typeof value === 'string'
-          ? value
-            .replace(/[^a-zA-Z0-9]/g, '_') // Replace all non-alphanumeric chars with underscore
-            .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
-            .replace(/([a-z])([A-Z])/g, '$1_$2')
-            .toUpperCase()
-            .replace(/__+/g, '_')
-            .replace(/_+$/, '')
-          : `VALUE_${value}`;
-        values[key] = value;
-      });
-
-      enums.push({
-        name: convertToUpperCase(name),
-        originalName: name,
-        values,
-        description: (def.title ? `${def.title}. ` : '') + (def.description || `Auto-generated enum for ${name}`),
-        type: enumType as 'string' | 'integer',
-        valueDescriptions: def['x-enum-descriptions'] || []
-      });
-    }
+    const tsTypeName = schemaAliasMap[schemaName] ?? schemaName;
+    enums.push({
+      constName: toUpperSnakeCase(schemaName),
+      tsTypeName,
+      values: schema.enum,
+      type: (schema.type === 'integer' ? 'integer' : 'string') as 'string' | 'integer',
+    });
   }
 
   return enums;
 }
 
-function generateEnumFile(enums: EnumInfo[]): string {
-  let content = `/**
- * Auto-generated const objects and arrays from OpenAPI specification
- *
- * This file contains constant objects and arrays derived from OpenAPI schema enums.
- * Each constant provides both an object form (for key-value access) and an array form (for iteration/validation).
- * These constants use existing types from schemas.ts to avoid duplication and ensure type safety.
- *
- * @remarks
- * - String enums generate both objects and arrays with proper type annotations
- * - Integer enums generate typed arrays only
- * - All constants use 'as const' for maximum type safety
- * - Keys follow SCREAMING_SNAKE_CASE convention for consistency
- *
- * @example
- * \`\`\`typescript
- * // Using the object form for key-value access
- * const status = BULK_OPERATION_STATUS.SUCCESS;
- * 
- * // Using the array form for iteration
- * const allStatuses = BULK_OPERATION_STATUS_VALUES;
- * \`\`\`
- */
+function buildContent(enums: EnumInfo[]): string {
+  const importedTypes = enums.map(e => e.tsTypeName);
+  const lines: string[] = [];
+  if (importedTypes.length > 0) {
+    lines.push(`import type { ${importedTypes.join(', ')} } from './schemas';`);
+    lines.push('');
+  }
 
-import { ${enums.map(e => e.originalName).join(', ')} } from './schemas';
-
-`;
-
-  enums.forEach(enumInfo => {
-    const typeName = enumInfo.originalName;
-
-    content += `/**
- * ${enumInfo.description || `${typeName} enum constants`}
- *
- * @remarks
- * This constant provides ${enumInfo.type === 'integer' ? 'an array of integer values' : 'both object and array forms'} for the ${typeName} enum.
- * ${enumInfo.type === 'integer' ? 'Integer enums are represented as typed arrays for efficient iteration and validation.' : 'The object form allows key-value access, while the array form enables iteration and validation.'}
- *
- * @example
- * ${enumInfo.type === 'integer' ?
-        `\`\`\`typescript
- * // Using the array for iteration
- * const algorithms = DNSSEC_ALGORITHM;
- * console.log(\`Available algorithms: \${algorithms.join(', ')}\`);
- * \`\`\`` :
-        `\`\`\`typescript
- * // Using the object form for key-value access
- * const status = ${enumInfo.name}.SUCCESS;
- * 
- * // Using the array form for iteration
- * const allStatuses = ${enumInfo.name}_VALUES;
- * console.log(\`Available statuses: \${allStatuses.join(', ')}\`);
- * \`\`\``
-      }
- *
- * @see {@link ${typeName}} - The TypeScript type definition
- */
-`;
-
+  for (const enumInfo of enums) {
     if (enumInfo.type === 'integer') {
-      // Generate array for integer enums
-      const values = Object.values(enumInfo.values);
-      content += `export const ${enumInfo.name} = [
-  ${values.join(',\n  ')}
-] as const satisfies ${typeName}[];\n\n`;
+      lines.push(`export const ${enumInfo.constName} = [`);
+      for (const value of enumInfo.values) {
+        lines.push(`  ${value},`);
+      }
+      lines.push(`] as const satisfies ReadonlyArray<${enumInfo.tsTypeName}>;`);
+      lines.push('');
     } else {
-      // Generate const object for string enums
-      content += `export const ${enumInfo.name} = {\n`;
-      Object.entries(enumInfo.values).forEach(([key, value]) => {
-        const valueStr = typeof value === 'string' ? `"${value}"` : value;
-        content += `  ${generateSafePropertyKey(key)}: ${valueStr},\n`;
-      });
-      content += `} as const satisfies Record<string, ${typeName}>;\n\n`;
+      lines.push(`export const ${enumInfo.constName} = {`);
+      for (const value of enumInfo.values) {
+        const key = generateSafeKey(toEnumKey(String(value)));
+        lines.push(`  ${key}: "${value}",`);
+      }
+      lines.push(`} as const satisfies Record<string, ${enumInfo.tsTypeName}>;`);
+      lines.push('');
 
-      // Generate array for string enums as well
-      const stringValues = Object.values(enumInfo.values).map(value =>
-        typeof value === 'string' ? `'${value}'` : value
-      );
-      content += `/**
- * Array of all ${typeName} enum values
- *
- * @remarks
- * This constant provides a array containing all valid ${typeName} enum values.
- * Useful for iteration, validation, and generating dynamic UI components.
- *
- * @example
- * \`\`\`typescript
- * // Iterating through all values
- * for (const value of ${enumInfo.name}_VALUES) {
- *   console.log(\`Processing: \${value}\`);
- * }
- * 
- * // Validation
- * const isValid = ${enumInfo.name}_VALUES.includes(someValue);
- * \`\`\`
- *
- * @see {@link ${typeName}} - The TypeScript type definition
- * @see {@link ${enumInfo.name}} - The object form of this enum
- */
-export const ${enumInfo.name}_VALUES = [
-  ${stringValues.join(',\n  ')}
-] as const satisfies [string, ...string[]] | ${typeName}[];\n\n`;
+      lines.push(`export const ${enumInfo.constName}_VALUES = [`);
+      for (const value of enumInfo.values) {
+        lines.push(`  '${value}',`);
+      }
+      lines.push(`] as const satisfies ReadonlyArray<${enumInfo.tsTypeName}>;`);
+      lines.push('');
     }
-  });
-  return content;
+  }
+
+  return lines.join('\n');
 }
 
-export function generateConstants(schemaPath: PathOrFileDescriptor) {
-  try {
-    // Extract enums from the OpenAPI YAML file
-    const enums = extractEnumsFromOpenAPI(schemaPath);
+export function generateConstants(spec: OpenAPISpec, schemaAliasMap: Record<string, string>) {
+  const enums = collectEnums(spec, schemaAliasMap);
+  console.log(`Found ${enums.length} enum constants`);
 
-    console.log(`Found ${enums.length} constants:`);
-    enums.forEach(enumInfo => {
-      console.log(`  - ${enumInfo.name} (${enumInfo.type}): ${Object.keys(enumInfo.values).length} values`);
-    });
-
-    // Generate constants file
-    const constantsContent = generateEnumFile(enums);
-
-    // Write to file
-    const outputPath = path.resolve('src/helpers/constants.ts');
-    fs.writeFileSync(outputPath, constantsContent);
-
-    console.log(`\nConstants written to: ${outputPath}`);
-
-    return enums.length;
-  } catch (error) {
-    console.error('Error generating enums:', error);
-    process.exit(1);
-  }
+  const content = buildContent(enums);
+  const outputPath = path.resolve('src/helpers/constants.ts');
+  fs.writeFileSync(outputPath, content);
+  console.log(`✅ Generated constants in ${outputPath}`);
 }
