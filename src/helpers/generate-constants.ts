@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { OpenAPISpec, toUpperSnakeCase, buildSchemasImport } from './utils';
+import { OpenAPISpec, toUpperSnakeCase, toEnumKey, buildSchemasImport } from './utils';
 
 interface EnumInfo {
   constName: string;
@@ -11,16 +11,6 @@ interface EnumInfo {
 
 function generateSafeKey(key: string): string {
   return /^\d/.test(key) ? `"${key}"` : key;
-}
-
-function toEnumKey(value: string): string {
-  return value
-    .replace(/[^a-zA-Z0-9]/g, '_')
-    .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    .toUpperCase()
-    .replace(/__+/g, '_')
-    .replace(/_+$/, '');
 }
 
 function collectEnums(spec: OpenAPISpec, schemaAliasMap: Record<string, string>): EnumInfo[] {

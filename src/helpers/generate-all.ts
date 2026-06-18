@@ -7,6 +7,8 @@ import { generateResponses } from './generate-responses';
 import { generateRequests } from './generate-requests';
 import { generateSchemas } from './generate-schemas';
 import { generateKeys } from './generate-keys';
+import { generateEndpoints } from './generate-endpoints';
+import { generatePermissions } from './generate-permissions';
 
 export function generateAllHelpers(schemaPath: PathOrFileDescriptor) {
   const spec = yaml.load(fs.readFileSync(schemaPath, 'utf-8')) as OpenAPISpec;
@@ -15,5 +17,7 @@ export function generateAllHelpers(schemaPath: PathOrFileDescriptor) {
   generateResponses(spec, schemaAliasMap);
   generateRequests(spec, schemaAliasMap);
   generateConstants(spec, schemaAliasMap);
+  const endpointNameMap = generateEndpoints(spec);
+  generatePermissions(spec, schemaAliasMap, endpointNameMap);
   generateIndex();
 }

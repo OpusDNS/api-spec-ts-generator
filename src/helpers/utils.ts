@@ -29,6 +29,7 @@ export interface OpenAPIOperation {
   responses?: Record<string, {
     content?: Record<string, { schema?: OpenAPISchema }>;
   }>;
+  'x-required-permissions'?: string[];
 }
 
 export interface OpenAPISpec {
@@ -57,6 +58,16 @@ export function generatePathName(pathString: string): string {
 
 export function toUpperSnakeCase(name: string): string {
   return name
+    .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .toUpperCase()
+    .replace(/__+/g, '_')
+    .replace(/_+$/, '');
+}
+
+export function toEnumKey(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9]/g, '_')
     .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     .toUpperCase()

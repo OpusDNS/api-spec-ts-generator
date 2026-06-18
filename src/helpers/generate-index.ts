@@ -6,6 +6,8 @@ export function generateIndex() {
     "export * from './keys';",
     "export * from './schemas';",
     "export * from './constants';",
+    "export * from './endpoints';",
+    "export * from './permissions';",
     "export * from './responses';",
     "export * from './requests';",
     '',
