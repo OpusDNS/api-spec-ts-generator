@@ -2,7 +2,6 @@ import fs, { PathOrFileDescriptor } from 'fs';
 import yaml from 'js-yaml';
 import { OpenAPISpec } from './utils';
 import { generateConstants } from './generate-constants';
-import { generateIndex } from './generate-index';
 import { generateResponses } from './generate-responses';
 import { generateRequests } from './generate-requests';
 import { generateSchemas } from './generate-schemas';
@@ -19,5 +18,4 @@ export function generateAllHelpers(schemaPath: PathOrFileDescriptor) {
   generateConstants(spec, schemaAliasMap);
   const endpointNameMap = generateEndpoints(spec);
   generatePermissions(spec, schemaAliasMap, endpointNameMap);
-  generateIndex();
 }
