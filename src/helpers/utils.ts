@@ -58,6 +58,7 @@ export function generatePathName(pathString: string): string {
 
 export function toUpperSnakeCase(name: string): string {
   return name
+    .replace(/[^a-zA-Z0-9_]/g, '_')
     .replace(/([A-Z]+)(?=[A-Z][a-z]|$)/g, '$1_')
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     .toUpperCase()
