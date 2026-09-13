@@ -19,6 +19,7 @@ function getTypeIdPrefix(schemaObject: SchemaObject) {
 
 export async function generateSchema(schemaUrl: string | URL | OpenAPI3 | Buffer | Readable) {
 	const ast = await openapiTS(schemaUrl, {
+		defaultNonNullable: false,
 		transform(schemaObject: SchemaObject): ts.TypeNode | TransformObject | undefined {
 			switch (schemaObject.format) {
 				case "date-time":
