@@ -12,7 +12,10 @@ permissions:
 
 jobs:
   publish:
-    runs-on: self-hosted
+    # GitHub-hosted on purpose: npm only accepts provenance from GitHub-hosted runners
+    # ("Unsupported GitHub Actions runner environment: \"self-hosted\""), and the package
+    # is published with provenance.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
