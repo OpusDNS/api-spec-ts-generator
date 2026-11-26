@@ -1,56 +1,68 @@
-import fs from 'fs';
-import path from 'path';
-import { OpenAPISpec, generatePathName, buildSchemasImport } from './utils';
+import {
+  HTTP_METHODS,
+  HttpMethodName,
+  OpenAPISpec,
+  buildSchemasImport,
+  generatePathName,
+  operationTypePath,
+  pickContentType,
+  resolveParameters,
+  schemaRefName,
+  writeGeneratedFile,
+} from './utils';
 
-const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
+interface RequestBody {
+  schemaName?: string;
+  isArray: boolean;
+  contentType: string;
+}
 
 interface RequestData {
+  pathString: string;
   pathName: string;
-  method: string;
-  operationId: string | undefined;
+  method: HttpMethodName;
   hasQueryParams: boolean;
   hasPathParams: boolean;
-  bodySchemaName: string | undefined;
-  bodyIsArray: boolean;
+  body: RequestBody | undefined;
 }
 
 function collectRequests(spec: OpenAPISpec): RequestData[] {
   const requests: RequestData[] = [];
 
-  for (const [pathStr, pathItem] of Object.entries(spec.paths ?? {})) {
-    const pathName = generatePathName(pathStr);
+  for (const [pathString, pathItem] of Object.entries(spec.paths ?? {})) {
+    const pathName = generatePathName(pathString);
 
     for (const method of HTTP_METHODS) {
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const hasQueryParams = operation.parameters?.some(p => p.in === 'query') ?? false;
-      const hasPathParams = operation.parameters?.some(p => p.in === 'path') ?? false;
-
-      const bodySchema = operation.requestBody?.content?.['application/json']?.schema;
-      let bodySchemaName: string | undefined;
-      let bodyIsArray = false;
-
-      if (bodySchema?.$ref) {
-        bodySchemaName = bodySchema.$ref.replace('#/components/schemas/', '');
-      } else if (bodySchema?.type === 'array' && bodySchema.items?.$ref) {
-        bodySchemaName = bodySchema.items.$ref.replace('#/components/schemas/', '');
-        bodyIsArray = true;
-      }
+      const parameters = resolveParameters(spec, pathItem, operation);
+      const contentType = pickContentType(operation.requestBody?.content);
+      const bodySchema = contentType ? operation.requestBody?.content?.[contentType]?.schema : undefined;
+      const itemSchemaName = bodySchema?.type === 'array' ? schemaRefName(bodySchema.items) : undefined;
 
       requests.push({
+        pathString,
         pathName,
-        method: method.toUpperCase(),
-        operationId: operation.operationId,
-        hasQueryParams,
-        hasPathParams,
-        bodySchemaName,
-        bodyIsArray,
+        method,
+        hasQueryParams: parameters.some(parameter => parameter.in === 'query'),
+        hasPathParams: parameters.some(parameter => parameter.in === 'path'),
+        body: contentType
+          ? { schemaName: schemaRefName(bodySchema) ?? itemSchemaName, isArray: itemSchemaName !== undefined, contentType }
+          : undefined,
       });
     }
   }
 
   return requests;
+}
+
+function bodyType(request: RequestData, body: RequestBody, schemaAliasMap: Record<string, string>): string {
+  const alias = body.schemaName ? schemaAliasMap[body.schemaName] : undefined;
+  if (alias) {
+    return body.isArray ? `${alias}[]` : alias;
+  }
+  return `NonNullable<${operationTypePath(request.pathString, request.method)}['requestBody']>['content']['${body.contentType}']`;
 }
 
 function buildContent(requests: RequestData[], schemaAliasMap: Record<string, string>): string {
@@ -61,40 +73,33 @@ function buildContent(requests: RequestData[], schemaAliasMap: Record<string, st
     a.pathName.localeCompare(b.pathName) || a.method.localeCompare(b.method)
   );
 
-  for (const req of sorted) {
-    const typeBase = `${req.method}_${req.pathName}_Request`;
-    const hasParams = req.hasQueryParams || req.hasPathParams;
-
-    const bodyTypeName = req.bodySchemaName
-      ? (schemaAliasMap[req.bodySchemaName] ?? req.bodySchemaName)
-      : undefined;
-
-    if (bodyTypeName) {
-      usedAliases.add(bodyTypeName);
-    }
+  for (const request of sorted) {
+    const typeBase = `${request.method.toUpperCase()}_${request.pathName}_Request`;
+    const hasParams = request.hasQueryParams || request.hasPathParams;
 
     const fields: string[] = [];
-    if (hasParams && req.operationId) {
-      fields.push(`  parameters: operations['${req.operationId}']['parameters'];`);
+    if (hasParams) {
+      fields.push(`  parameters: ${operationTypePath(request.pathString, request.method)}['parameters'];`);
     }
-    if (bodyTypeName) {
-      const bodyType = req.bodyIsArray ? `${bodyTypeName}[]` : bodyTypeName;
-      fields.push(`  requestBody: ${bodyType};`);
+    if (request.body) {
+      const alias = request.body.schemaName ? schemaAliasMap[request.body.schemaName] : undefined;
+      if (alias) {
+        usedAliases.add(alias);
+      }
+      fields.push(`  requestBody: ${bodyType(request, request.body, schemaAliasMap)};`);
     }
 
     lines.push(`export type ${typeBase} = {`);
     lines.push(...fields);
     lines.push(`};`);
 
-    if (hasParams && req.operationId) {
-      if (req.hasQueryParams) {
-        lines.push(`export type ${typeBase}_Query = ${typeBase}['parameters']['query'];`);
-      }
-      if (req.hasPathParams) {
-        lines.push(`export type ${typeBase}_Path = ${typeBase}['parameters']['path'];`);
-      }
+    if (request.hasQueryParams) {
+      lines.push(`export type ${typeBase}_Query = NonNullable<${typeBase}['parameters']['query']>;`);
     }
-    if (bodyTypeName) {
+    if (request.hasPathParams) {
+      lines.push(`export type ${typeBase}_Path = NonNullable<${typeBase}['parameters']['path']>;`);
+    }
+    if (request.body) {
       lines.push(`export type ${typeBase}_Body = ${typeBase}['requestBody'];`);
     }
 
@@ -105,13 +110,12 @@ function buildContent(requests: RequestData[], schemaAliasMap: Record<string, st
     ? buildSchemasImport([...usedAliases].sort()) + '\n'
     : '';
 
-  return `import type { operations } from '../schema';\n${schemaImport}\n` + lines.join('\n');
+  return `import type { paths } from '../schema';\n${schemaImport}\n` + lines.join('\n');
 }
 
 export function generateRequests(spec: OpenAPISpec, schemaAliasMap: Record<string, string>) {
   const requests = collectRequests(spec);
   const content = buildContent(requests, schemaAliasMap);
-  const outputPath = path.join(process.cwd(), 'src/helpers/requests.d.ts');
-  fs.writeFileSync(outputPath, content);
+  const outputPath = writeGeneratedFile('src/helpers/requests.d.ts', content);
   console.log(`✅ Generated request types in ${outputPath}`);
 }

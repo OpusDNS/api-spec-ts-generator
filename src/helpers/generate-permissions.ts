@@ -1,8 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-import { OpenAPISpec, toEnumKey, toUpperSnakeCase } from './utils';
-
-const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
+import { HTTP_METHODS, HttpMethodName, OpenAPISpec, toEnumKey, toUpperSnakeCase, writeGeneratedFile } from './utils';
 
 const RESOURCE_SCHEMA = 'PublicResource';
 const SCOPE_SCHEMA = 'PublicScope';
@@ -11,7 +7,7 @@ const SCOPE_CONST = toUpperSnakeCase(SCOPE_SCHEMA);
 
 interface EndpointPermissions {
   identifier: string;
-  methods: Record<(typeof HTTP_METHODS)[number], string[]>;
+  methods: Record<HttpMethodName, string[]>;
 }
 
 function permissionMemberKey(permission: string): string {
@@ -86,6 +82,7 @@ function buildContent(
   const endpointImport = [
     'import {',
     '  type Endpoint,',
+    '  isEndpoint,',
     ...sortedEndpoints.map(e => `  ${e.identifier},`),
     "} from './endpoints';",
   ].join('\n');
@@ -95,7 +92,15 @@ function buildContent(
     `import { ${RESOURCE_CONST}, ${SCOPE_CONST} } from './constants';`,
     endpointImport,
     '',
-    "export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';",
+    `export const OPERATION_METHOD_VALUES = [${HTTP_METHODS.map(method => `'${method}'`).join(', ')}] as const;`,
+    '',
+    'export type HttpMethod = (typeof OPERATION_METHOD_VALUES)[number];',
+    '',
+    'const OPERATION_METHODS: ReadonlySet<string> = new Set(OPERATION_METHOD_VALUES);',
+    '',
+    'export function isOperationMethod(method: string): method is HttpMethod {',
+    '  return OPERATION_METHODS.has(method);',
+    '}',
     '',
     'export const PUBLIC_PERMISSION = {',
   ];
@@ -119,6 +124,14 @@ function buildContent(
 
   lines.push(`} as const satisfies Record<Endpoint, Record<HttpMethod, readonly ${publicPermissionType}[]>>;`);
   lines.push('');
+  lines.push(`export function getRequiredPermissions(path: string, method: string): readonly ${publicPermissionType}[] {`);
+  lines.push('  const normalizedMethod = method.toLowerCase();');
+  lines.push('  if (!isEndpoint(path) || !isOperationMethod(normalizedMethod)) {');
+  lines.push('    return [];');
+  lines.push('  }');
+  lines.push('  return REQUIRED_PERMISSIONS[path][normalizedMethod];');
+  lines.push('}');
+  lines.push('');
 
   return lines.join('\n');
 }
@@ -134,7 +147,6 @@ export function generatePermissions(
   const endpoints = collect(spec, endpointNameMap, new Set(resources), new Set(scopes));
   const publicPermissionType = schemaAliasMap['PublicPermission'] ?? 'PublicPermission';
   const content = buildContent(endpoints, permissions, publicPermissionType);
-  const outputPath = path.join(process.cwd(), 'src/helpers/permissions.ts');
-  fs.writeFileSync(outputPath, content);
+  const outputPath = writeGeneratedFile('src/helpers/permissions.ts', content);
   console.log(`✅ Generated ${permissions.length} permissions and required permissions map in ${outputPath}`);
 }

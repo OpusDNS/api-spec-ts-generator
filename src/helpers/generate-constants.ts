@@ -1,16 +1,33 @@
-import fs from 'fs';
-import path from 'path';
-import { OpenAPISpec, toUpperSnakeCase, toEnumKey, buildSchemasImport } from './utils';
+import {
+  OpenAPISpec,
+  assertUniqueExportNames,
+  buildSchemasImport,
+  toEnumKey,
+  toLiteral,
+  toSafeObjectKey,
+  toUpperSnakeCase,
+  writeGeneratedFile,
+} from './utils';
 
 interface EnumInfo {
+  schemaName: string;
   constName: string;
   tsTypeName: string;
   values: (string | number)[];
-  type: 'string' | 'integer';
+  memberNames: string[] | undefined;
 }
 
-function generateSafeKey(key: string): string {
-  return /^\d/.test(key) ? `"${key}"` : key;
+function memberNames(schemaName: string, values: (string | number)[], varnames: string[] | undefined): string[] | undefined {
+  if (varnames) {
+    if (varnames.length !== values.length) {
+      throw new Error(`Cannot generate constants: '${schemaName}' has ${values.length} enum values but ${varnames.length} x-enum-varnames.`);
+    }
+    return varnames.map(toEnumKey);
+  }
+  if (values.every(value => typeof value === 'string')) {
+    return values.map(value => toEnumKey(String(value)));
+  }
+  return undefined;
 }
 
 function collectEnums(spec: OpenAPISpec, schemaAliasMap: Record<string, string>): EnumInfo[] {
@@ -19,12 +36,12 @@ function collectEnums(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
   for (const [schemaName, schema] of Object.entries(spec.components?.schemas ?? {})) {
     if (!schema.enum || !Array.isArray(schema.enum)) continue;
 
-    const tsTypeName = schemaAliasMap[schemaName] ?? schemaName;
     enums.push({
+      schemaName,
       constName: toUpperSnakeCase(schemaName),
-      tsTypeName,
+      tsTypeName: schemaAliasMap[schemaName] ?? schemaName,
       values: schema.enum,
-      type: (schema.type === 'integer' ? 'integer' : 'string') as 'string' | 'integer',
+      memberNames: memberNames(schemaName, schema.enum, schema['x-enum-varnames']),
     });
   }
 
@@ -32,37 +49,28 @@ function collectEnums(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
 }
 
 function buildContent(enums: EnumInfo[]): string {
-  const importedTypes = enums.map(e => e.tsTypeName);
   const lines: string[] = [];
-  if (importedTypes.length > 0) {
-    lines.push(buildSchemasImport(importedTypes));
+  if (enums.length > 0) {
+    lines.push(buildSchemasImport(enums.map(enumInfo => enumInfo.tsTypeName)));
     lines.push('');
   }
 
   for (const enumInfo of enums) {
-    if (enumInfo.type === 'integer') {
-      lines.push(`export const ${enumInfo.constName} = [`);
-      for (const value of enumInfo.values) {
-        lines.push(`  ${value},`);
-      }
-      lines.push(`] as const satisfies ReadonlyArray<${enumInfo.tsTypeName}>;`);
-      lines.push('');
-    } else {
+    if (enumInfo.memberNames) {
       lines.push(`export const ${enumInfo.constName} = {`);
-      for (const value of enumInfo.values) {
-        const key = generateSafeKey(toEnumKey(String(value)));
-        lines.push(`  ${key}: "${value}",`);
-      }
+      enumInfo.values.forEach((value, index) => {
+        lines.push(`  ${toSafeObjectKey(enumInfo.memberNames![index])}: ${toLiteral(value, '"')},`);
+      });
       lines.push(`} as const satisfies Record<string, ${enumInfo.tsTypeName}>;`);
       lines.push('');
-
-      lines.push(`export const ${enumInfo.constName}_VALUES = [`);
-      for (const value of enumInfo.values) {
-        lines.push(`  '${value}',`);
-      }
-      lines.push(`] as const satisfies ReadonlyArray<${enumInfo.tsTypeName}>;`);
-      lines.push('');
     }
+
+    lines.push(`export const ${enumInfo.constName}_VALUES = [`);
+    for (const value of enumInfo.values) {
+      lines.push(`  ${toLiteral(value, "'")},`);
+    }
+    lines.push(`] as const satisfies ReadonlyArray<${enumInfo.tsTypeName}>;`);
+    lines.push('');
   }
 
   return lines.join('\n');
@@ -70,10 +78,13 @@ function buildContent(enums: EnumInfo[]): string {
 
 export function generateConstants(spec: OpenAPISpec, schemaAliasMap: Record<string, string>) {
   const enums = collectEnums(spec, schemaAliasMap);
+  assertUniqueExportNames('constants.ts', enums.flatMap(enumInfo => [
+    ...(enumInfo.memberNames ? [enumInfo.constName] : []),
+    `${enumInfo.constName}_VALUES`,
+  ]));
   console.log(`Found ${enums.length} enum constants`);
 
   const content = buildContent(enums);
-  const outputPath = path.resolve('src/helpers/constants.ts');
-  fs.writeFileSync(outputPath, content);
+  const outputPath = writeGeneratedFile('src/helpers/constants.ts', content);
   console.log(`✅ Generated constants in ${outputPath}`);
 }

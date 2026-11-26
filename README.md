@@ -22,6 +22,21 @@ const openApiSchema = await generateSchema(schemaPath);
 generateAllHelpers(schemaPath); // helpers are generated to `/src/helpers`
 ```
 
+### Generated helpers
+
+| File | Exports |
+|---|---|
+| `schemas.d.ts` | A type alias per component schema |
+| `requests.d.ts` / `responses.d.ts` | `METHOD_Path_Request` (`_Query`, `_Path`, `_Body`) and `METHOD_Path_Response` (`_STATUS`) types |
+| `constants.ts` | `X_VALUES` per enum, plus an `X` map for string enums and enums with `x-enum-varnames` |
+| `keys.ts` | `KEY_TYPE_PROP` property-name constants and `KEYS_TYPE` lists |
+| `endpoints.ts` | `*_ENDPOINT` path constants, `ENDPOINT_VALUES`, `Endpoint`, `isEndpoint()` |
+| `permissions.ts` | `PUBLIC_PERMISSION`, `REQUIRED_PERMISSIONS`, `getRequiredPermissions()` |
+| `constraints.ts` | `<TYPE>_CONSTRAINTS`, `<TYPE>_DEFAULTS`, `PARAMETER_CONSTRAINTS` |
+| `date-time-fields.ts` | `DATE_TIME_FIELD_NAMES` (fields to revive into `Date`) |
+| `typeids.ts` | `TYPEID_PREFIX`, `TYPEID_PREFIX_VALUES`, `TypeIdPrefix`, `TYPEID_PATTERN` |
+| `index.ts` | Barrel re-exporting all of the above |
+
 ### Links
 
 - [OpusDNS](https://www.opusdns.com/)
