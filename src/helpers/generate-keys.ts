@@ -1,11 +1,24 @@
-import fs from 'fs';
-import path from 'path';
-import { OpenAPISpec, OpenAPISchema, toUpperSnakeCase, buildSchemasImport } from './utils';
+import {
+  OpenAPISchema,
+  OpenAPISpec,
+  assertUniqueExportNames,
+  buildSchemasImport,
+  toLiteral,
+  toUpperSnakeCase,
+  writeGeneratedFile,
+} from './utils';
+
+const GENERIC_ENVELOPE_PREFIXES = ['Pagination_', 'PageResponse_', 'ContextPayload_'];
+
+function propertyConstantSuffix(propertyName: string): string {
+  return propertyName.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+}
 
 function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>): string {
   const schemas = spec.components?.schemas ?? {};
   const body: string[] = [];
   const importedTypes: string[] = [];
+  const exportNames: string[] = [];
 
   const typesWithProperties = Object.entries(schemas)
     .filter(([schemaName, schema]) => {
@@ -14,7 +27,7 @@ function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
         typeName !== undefined &&
         schema.properties !== undefined &&
         Object.keys(schema.properties).length > 0 &&
-        !typeName.startsWith('Pagination_')
+        !GENERIC_ENVELOPE_PREFIXES.some(prefix => typeName.startsWith(prefix))
       );
     })
     .map(([schemaName, schema]) => ({
@@ -25,19 +38,25 @@ function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
   for (const { typeName, properties } of typesWithProperties) {
     importedTypes.push(typeName);
     const typeConstName = toUpperSnakeCase(typeName);
+    const keyNames: string[] = [];
 
     for (const propName of Object.keys(properties)) {
-      body.push(`export const KEY_${typeConstName}_${propName.toUpperCase()} = '${propName}' satisfies keyof ${typeName};`);
+      const keyName = `KEY_${typeConstName}_${propertyConstantSuffix(propName)}`;
+      keyNames.push(keyName);
+      body.push(`export const ${keyName} = ${toLiteral(propName, "'")} satisfies keyof ${typeName};`);
     }
+    exportNames.push(...keyNames, `KEYS_${typeConstName}`);
 
     body.push('');
     body.push(`export const KEYS_${typeConstName} = [`);
-    for (const propName of Object.keys(properties)) {
-      body.push(`  KEY_${typeConstName}_${propName.toUpperCase()},`);
+    for (const keyName of keyNames) {
+      body.push(`  ${keyName},`);
     }
     body.push(`] as const satisfies (keyof ${typeName})[];`);
     body.push('');
   }
+
+  assertUniqueExportNames('keys.ts', exportNames);
 
   const importLine = importedTypes.length > 0
     ? buildSchemasImport(importedTypes) + '\n\n'
@@ -48,7 +67,6 @@ function buildContent(spec: OpenAPISpec, schemaAliasMap: Record<string, string>)
 
 export function generateKeys(spec: OpenAPISpec, schemaAliasMap: Record<string, string>) {
   const content = buildContent(spec, schemaAliasMap);
-  const outputPath = path.join(process.cwd(), 'src/helpers/keys.ts');
-  fs.writeFileSync(outputPath, content);
+  const outputPath = writeGeneratedFile('src/helpers/keys.ts', content);
   console.log(`✅ Generated key constants in ${outputPath}`);
 }

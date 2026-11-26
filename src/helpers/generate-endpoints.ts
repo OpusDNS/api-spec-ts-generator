@@ -1,6 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-import { OpenAPISpec, generatePathName, toUpperSnakeCase } from './utils';
+import { OpenAPISpec, generatePathName, toUpperSnakeCase, writeGeneratedFile } from './utils';
 
 export function generateEndpoints(spec: OpenAPISpec): Record<string, string> {
   const endpointNameMap: Record<string, string> = {};
@@ -20,12 +18,20 @@ export function generateEndpoints(spec: OpenAPISpec): Record<string, string> {
     lines.push(`export const ${name} = '${pathStr}';`);
   }
 
-  const unionMembers = [...usedNames].map(name => `  | typeof ${name}`);
   lines.push('');
-  lines.push(`export type Endpoint =\n${unionMembers.join('\n')};`);
+  lines.push('export const ENDPOINT_VALUES = [');
+  lines.push(...[...usedNames].map(name => `  ${name},`));
+  lines.push('] as const;');
+  lines.push('');
+  lines.push('export type Endpoint = (typeof ENDPOINT_VALUES)[number];');
+  lines.push('');
+  lines.push('const ENDPOINTS: ReadonlySet<string> = new Set(ENDPOINT_VALUES);');
+  lines.push('');
+  lines.push('export function isEndpoint(path: string): path is Endpoint {');
+  lines.push('  return ENDPOINTS.has(path);');
+  lines.push('}');
 
-  const outputPath = path.join(process.cwd(), 'src/helpers/endpoints.ts');
-  fs.writeFileSync(outputPath, lines.join('\n') + '\n');
+  const outputPath = writeGeneratedFile('src/helpers/endpoints.ts', lines.join('\n') + '\n');
   console.log(`✅ Generated ${Object.keys(endpointNameMap).length} endpoint constants in ${outputPath}`);
 
   return endpointNameMap;
